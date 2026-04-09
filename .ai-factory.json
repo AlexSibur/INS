@@ -1,0 +1,136 @@
+{
+  "version": "2.7.0",
+  "agents": [
+    {
+      "id": "cursor",
+      "skillsDir": ".cursor/skills",
+      "installedSkills": [
+        "aif",
+        "aif-architecture",
+        "aif-best-practices",
+        "aif-docs",
+        "aif-fix",
+        "aif-implement",
+        "aif-improve",
+        "aif-plan",
+        "aif-rules",
+        "aif-skill-generator"
+      ],
+      "mcp": {
+        "github": false,
+        "filesystem": false,
+        "postgres": false,
+        "chromeDevtools": false,
+        "playwright": false
+      },
+      "managedSkills": {
+        "aif": {
+          "sourceHash": "5161e4dbaab409be64099fd0d55b06670fc7136fce63e9781eb9d21ee608b6ac",
+          "installedHash": "404b28fb1d7eae5c8d81080e3cd33d23422dac7f75af19421839cb29f2da2ab2"
+        },
+        "aif-architecture": {
+          "sourceHash": "ed84bcfd918974a8e84ca5c27bdcf43b330c2cad9f65d7adbc573493c4242eb7",
+          "installedHash": "5de2b0ff28f907734b1998f8bdaf3637f917dea797fa7405a9e401e3c24afa5c"
+        },
+        "aif-best-practices": {
+          "sourceHash": "c62af095199523910b0effb604a816e7d4c10e375fa184a61536ed7c0a6a91f2",
+          "installedHash": "bb1184e2ce030220def39258bfbec701f731b8e2e7c692b4ca4d4cd07be7bd2e"
+        },
+        "aif-docs": {
+          "sourceHash": "86742da952961228f0e6a57a04256b824673637032432b575ed884a239baec05",
+          "installedHash": "5c3a56927c9c47bf9042dc9e7896a565c82137dd172b2178c16467842fc93568"
+        },
+        "aif-fix": {
+          "sourceHash": "07eccef30c0bb13220a35a463432a9c91043fc11a20c2f2dcaa2dec4da31f93a",
+          "installedHash": "37fe0c7948d3a2750ecd3baf033f70dfe12ac0543d554597a384349a305e17a6"
+        },
+        "aif-implement": {
+          "sourceHash": "13e29a228780bb40d80cb755b66e796665f0e5a58f315bf6e7f273dfe55e3a6a",
+          "installedHash": "cb33f8f60cb05c9e5767a451c5af80c4125a836b0857ef488b3e10958929d6b3"
+        },
+        "aif-improve": {
+          "sourceHash": "6dd70287e4097fe75f039b22b8c35f41087a6f66fbd80f43b63aa154955b9f30",
+          "installedHash": "9aad1a032522ea97435cae9e86ac2a29842a85383d0512ee684be878601b0199"
+        },
+        "aif-plan": {
+          "sourceHash": "304863729b6d94dd5966fb90a1c503c57f9072cdf484bb2fe66bfc7689d12c4e",
+          "installedHash": "1d3db2f3f397fb8cd64310c8525ca222bb6981aebfdb9147a64346fa89c118b9"
+        },
+        "aif-rules": {
+          "sourceHash": "8e41965739330f3997b970eecd6727fdd1ceb9be203795df44793d260fe0c6e6",
+          "installedHash": "01ff681a74337578cb9beb8d2ee76499a46f3579c9711a581aa9eff8e67fc430"
+        },
+        "aif-skill-generator": {
+          "sourceHash": "ba1c63a2c47778fa1e1a95e786e378cf53ec2328d923d77dd40f486df07dbae7",
+          "installedHash": "fc1f64492b0a7e6b0a6a9e267c53f0d5f2477927ed1e121274e2477de006034d"
+        }
+      }
+    },
+    {
+      "id": "opencode",
+      "skillsDir": ".opencode/skills",
+      "installedSkills": [
+        "aif",
+        "aif-architecture",
+        "aif-best-practices",
+        "aif-docs",
+        "aif-fix",
+        "aif-implement",
+        "aif-improve",
+        "aif-plan",
+        "aif-rules",
+        "aif-skill-generator"
+      ],
+      "mcp": {
+        "github": false,
+        "filesystem": false,
+        "postgres": false,
+        "chromeDevtools": false,
+        "playwright": false
+      },
+      "managedSkills": {
+        "aif": {
+          "sourceHash": "5161e4dbaab409be64099fd0d55b06670fc7136fce63e9781eb9d21ee608b6ac",
+          "installedHash": "e935b076b86212cca4568e60e627b3de53cff21d9f897d5742aab688fc4c8eda"
+        },
+        "aif-architecture": {
+          "sourceHash": "ed84bcfd918974a8e84ca5c27bdcf43b330c2cad9f65d7adbc573493c4242eb7",
+          "installedHash": "5de2b0ff28f907734b1998f8bdaf3637f917dea797fa7405a9e401e3c24afa5c"
+        },
+        "aif-best-practices": {
+          "sourceHash": "c62af095199523910b0effb604a816e7d4c10e375fa184a61536ed7c0a6a91f2",
+          "installedHash": "bb1184e2ce030220def39258bfbec701f731b8e2e7c692b4ca4d4cd07be7bd2e"
+        },
+        "aif-docs": {
+          "sourceHash": "86742da952961228f0e6a57a04256b824673637032432b575ed884a239baec05",
+          "installedHash": "5c3a56927c9c47bf9042dc9e7896a565c82137dd172b2178c16467842fc93568"
+        },
+        "aif-fix": {
+          "sourceHash": "07eccef30c0bb13220a35a463432a9c91043fc11a20c2f2dcaa2dec4da31f93a",
+          "installedHash": "37fe0c7948d3a2750ecd3baf033f70dfe12ac0543d554597a384349a305e17a6"
+        },
+        "aif-implement": {
+          "sourceHash": "13e29a228780bb40d80cb755b66e796665f0e5a58f315bf6e7f273dfe55e3a6a",
+          "installedHash": "cb33f8f60cb05c9e5767a451c5af80c4125a836b0857ef488b3e10958929d6b3"
+        },
+        "aif-improve": {
+          "sourceHash": "6dd70287e4097fe75f039b22b8c35f41087a6f66fbd80f43b63aa154955b9f30",
+          "installedHash": "9aad1a032522ea97435cae9e86ac2a29842a85383d0512ee684be878601b0199"
+        },
+        "aif-plan": {
+          "sourceHash": "304863729b6d94dd5966fb90a1c503c57f9072cdf484bb2fe66bfc7689d12c4e",
+          "installedHash": "1d3db2f3f397fb8cd64310c8525ca222bb6981aebfdb9147a64346fa89c118b9"
+        },
+        "aif-rules": {
+          "sourceHash": "8e41965739330f3997b970eecd6727fdd1ceb9be203795df44793d260fe0c6e6",
+          "installedHash": "01ff681a74337578cb9beb8d2ee76499a46f3579c9711a581aa9eff8e67fc430"
+        },
+        "aif-skill-generator": {
+          "sourceHash": "ba1c63a2c47778fa1e1a95e786e378cf53ec2328d923d77dd40f486df07dbae7",
+          "installedHash": "caf8ccd2eb1f4f42444f6ae11008d287596c86cbc67beb19e7436425af931f07"
+        }
+      }
+    }
+  ],
+  "extensions": []
+}

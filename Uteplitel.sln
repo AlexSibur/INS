@@ -1,0 +1,35 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InsulationMasterPro", "InsulationMasterPro.csproj", "{6C70AEAC-81C3-5BD1-6366-DE5429BB554A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{D3641E65-41B0-446F-BAA2-6F4C01FF5DBE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InsulationMasterPro.Tests", "tests\InsulationMasterPro.Tests\InsulationMasterPro.Tests.csproj", "{8D2C68F0-5EB7-47AE-93C8-FD033F47B22E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6C70AEAC-81C3-5BD1-6366-DE5429BB554A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6C70AEAC-81C3-5BD1-6366-DE5429BB554A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6C70AEAC-81C3-5BD1-6366-DE5429BB554A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6C70AEAC-81C3-5BD1-6366-DE5429BB554A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8D2C68F0-5EB7-47AE-93C8-FD033F47B22E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D2C68F0-5EB7-47AE-93C8-FD033F47B22E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D2C68F0-5EB7-47AE-93C8-FD033F47B22E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D2C68F0-5EB7-47AE-93C8-FD033F47B22E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {630833A8-969D-4462-BAB3-C0DD36C917BA}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8D2C68F0-5EB7-47AE-93C8-FD033F47B22E} = {D3641E65-41B0-446F-BAA2-6F4C01FF5DBE}
+	EndGlobalSection
+EndGlobal
