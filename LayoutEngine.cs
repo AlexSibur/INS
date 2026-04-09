@@ -124,6 +124,17 @@ namespace InsulationMasterPro.Logic
                     
                     var facadeWindows = windows.Where(w => IsWindowInsideFacade(w, facade)).ToList();
                     
+                    // Stock Flush FIX: последний фасад выходит из Row Sync
+                    // и получает независимый RowHeightForecaster для максимальной утилизации остатков.
+                    bool isLastFacade = (facadeIdx == facades.Count);
+                    bool useStockFlush = isLastFacade && facades.Count > 1 && _rowSyncEnabled;
+                    var currentSyncedHeights = (facadeIdx > 1 && !useStockFlush) ? _syncedRowHeights : null;
+
+                    if (useStockFlush)
+                    {
+                        result.Warnings.Add($"Stock Flush: Фасад {facadeIdx} — независимая сетка рядов для максимальной утилизации остатков");
+                    }
+
                     // Если это первый фасад, готовим спроецированные окна для Forecaster
                     List<WindowInfo> forecasterWindows = null;
                     if (facadeIdx == 1)
@@ -153,7 +164,7 @@ namespace InsulationMasterPro.Logic
                     
                     var facadeResult = ProcessSingleFacade(
                         facade, facadeWindows, lBoots, context, facadeIdx, 
-                        firstRowWithRelease, _syncedRowHeights, forecasterWindows);
+                        firstRowWithRelease, currentSyncedHeights, forecasterWindows);
                     MergeResults(result, facadeResult);
                     
                     if (facadeIdx == 1 && _rowSyncEnabled)

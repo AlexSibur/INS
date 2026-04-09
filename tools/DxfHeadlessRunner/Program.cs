@@ -40,14 +40,41 @@ Console.WriteLine($"[HEADLESS] Found {facades.Count} facades and {windows.Count}
 var constraints = new OptimizationConstraints();
 int overallResult = 0;
 List<double>? syncedRowHeights = null;
-bool stockFlushLastFacade = false;
-Console.WriteLine($"[CONFIG] Row Sync: ON (Фасады 2-{facades.Count}), Stock Flush: GLOBAL (via global window projection + aggressive multi-pass)");
+bool stockFlushLastFacade = true; // Stock Flush FIX: последний фасад получает независимый RowHeightForecaster
+Console.WriteLine($"[CONFIG] Row Sync: ON (Фасады 2-{facades.Count - 1}), Stock Flush: ON (последний фасад — независимая оптимизация)");
 
 // Единый склад для всех фасадов (как в реальной работе):
 // остатки от фасада 1 переходят в пул фасада 2 и т.д.
 RemnantDatabase.ClearAll();
 var stock = new List<Remnant>();
 Console.WriteLine("[HEADLESS] Склад очищен один раз перед всеми фасадами (общий пул остатков)");
+
+// === A2 FIX: Pre-scan фасадов для оценки demand (чистая площадь утепления) ===
+// Это позволяет распределять остатки пропорционально между фасадами,
+// а не отдавать весь склад последнему фасаду.
+var facadeDemands = new List<double>(); // чистая площадь утепления каждого фасада (мм²)
+for (int fi = 0; fi < facades.Count; fi++)
+{
+    var f = facades[fi];
+    var fw = windows.Where(w =>
+    {
+        double wCenterX = (w.MinX + w.MaxX) / 2;
+        double wCenterY = (w.MinY + w.MaxY) / 2;
+        return wCenterX >= f.MinX && wCenterX <= f.MaxX &&
+               wCenterY >= f.MinY && wCenterY <= f.MaxY;
+    }).ToList();
+    double facadeArea = f.Width * f.Height;
+    double windowsArea = fw.Sum(w => w.Area);
+    double netArea = facadeArea - windowsArea;
+    facadeDemands.Add(netArea);
+}
+double totalDemand = facadeDemands.Sum();
+Console.WriteLine($"[A2-DEMAND] Оценка demand по фасадам:");
+for (int fi = 0; fi < facadeDemands.Count; fi++)
+{
+    double pct = totalDemand > 0 ? facadeDemands[fi] / totalDemand * 100.0 : 0;
+    Console.WriteLine($"  Фасад {fi + 1}: {facadeDemands[fi] / 1_000_000.0:F3} м² ({pct:F1}%)");
+}
 
 // Сбор результатов для итоговой сводки (включая движение склада)
 var allResults = new List<(int FacadeIndex, FacadeInput Input, LayoutResult Result,
@@ -109,9 +136,16 @@ for (int facadeIndex = 0; facadeIndex < facades.Count; facadeIndex++)
         Windows = windowInfos
     };
 
-    var currentSyncedHeights = facadeIndex > 0 ? syncedRowHeights : null;
+    // Stock Flush FIX: последний фасад выходит из Row Sync и получает независимый RowHeightForecaster
+    bool isLastFacade = (facadeIndex == facades.Count - 1);
+    bool useStockFlush = stockFlushLastFacade && isLastFacade && facades.Count > 1;
+    var currentSyncedHeights = (facadeIndex > 0 && !useStockFlush) ? syncedRowHeights : null;
 
-    if (currentSyncedHeights != null)
+    if (useStockFlush)
+    {
+        Console.WriteLine($"[STOCK-FLUSH] Фасад {facadeIndex + 1}: Stock Flush — независимая сетка рядов для максимальной утилизации остатков");
+    }
+    else if (currentSyncedHeights != null)
     {
         Console.WriteLine($"[ROW-SYNC] Фасад {facadeIndex + 1}: применяем сетку рядов от Фасада 1 (RowHeightForecaster пропущен)");
     }
@@ -190,15 +224,34 @@ for (int facadeIndex = 0; facadeIndex < facades.Count; facadeIndex++)
         .Select(g => $"{g.Key}мм×{g.Count()}");
     Console.WriteLine($"[HEADLESS]   Высоты рядов: {string.Join(", ", rowHeightGroups)}");
 
+    // A2 FIX: Demand-proportional MaxRemnantUsageWeight boost для ранних фасадов.
+    // Ранние фасады получают бóльший RemnantUsageWeight, чтобы сильнее стремиться использовать остатки.
+    // Последний фасад использует стандартный вес (остатки уже распределены на ранних).
+    double demandRatio = totalDemand > 0 ? facadeDemands[facadeIndex] / totalDemand : 1.0 / facades.Count;
+    // Для ранних фасадов (меньше накопленного склада) увеличиваем вес;
+    // для последних (больше склада) — стандартный вес.
+    // facadeBoostFactor: facade 1 → 1.3, facade N → 1.0 (линейная интерполяция)
+    double facadeBoostFactor = facades.Count > 1
+        ? 1.3 - 0.3 * facadeIndex / (facades.Count - 1.0)
+        : 1.0;
+    int boostedMaxRemnantWeight = Math.Min(137, (int)(135 * facadeBoostFactor));
+
+    // Stock Flush: увеличенный timeout для последнего фасада
+    int facadeTimeout = useStockFlush ? 180 : 90;
+
     var config = new OptimizerConfig
     {
-        TimeoutSeconds = 90,
+        TimeoutSeconds = facadeTimeout,
         LogProgress = false,
         UseRollingHorizon = true,
         EnableNarrowStripBonus = true, // приоритет узким полосам (1200×200мм) в CP-SAT objective
-        MaxStockForSolver = 400
+        EnableRemnantPreAllocation = true, // C1: включаем pre-allocation
+        MaxStockForSolver = 400,
+        MaxRemnantUsageWeight = boostedMaxRemnantWeight
     };
     Console.WriteLine($"[HEADLESS]   MaxStockForSolver: {config.MaxStockForSolver} (склад: {stock.Count} шт.)");
+    Console.WriteLine($"[A2-BOOST]   Фасад {facadeIndex + 1}: demandRatio={demandRatio:F3}, boostFactor={facadeBoostFactor:F2}, " +
+                      $"MaxRemnantUsageWeight={boostedMaxRemnantWeight}, timeout={facadeTimeout}s");
 
     var rolling = new RollingHorizonEngine(config, constraints)
     {

@@ -122,7 +122,8 @@ namespace InsulationMasterPro.OrTools
                     RemnantUsageWeight = pass1RemnantWeight,
                     MaxRemnantUsageWeight = maxRemnantWeight,
                     ImprovementCMinDim = _config.ImprovementCMinDim,
-                    EnableRowLevelObjective = _config.EnableRowLevelObjective
+                    EnableRowLevelObjective = _config.EnableRowLevelObjective,
+                    EnableNarrowStripBonus = _config.EnableNarrowStripBonus
                 };
 
                 System.Diagnostics.Debug.WriteLine(
@@ -160,7 +161,8 @@ namespace InsulationMasterPro.OrTools
                         RemnantUsageWeight = maxRemnantWeight,
                         MaxRemnantUsageWeight = maxRemnantWeight,
                         ImprovementCMinDim = _config.ImprovementCMinDim,
-                        EnableRowLevelObjective = _config.EnableRowLevelObjective
+                        EnableRowLevelObjective = _config.EnableRowLevelObjective,
+                        EnableNarrowStripBonus = _config.EnableNarrowStripBonus
                     };
 
                     System.Diagnostics.Debug.WriteLine(
@@ -1379,9 +1381,48 @@ namespace InsulationMasterPro.OrTools
             }
             else
             {
-                // Fallback при аномально большом складе: сортировка по площади
-                var topByArea = feasibleNonVirtual.OrderByDescending(r => r.Area).Take(budget);
+                // B3 FIX: Гибридный отбор вместо чисто по площади.
+                // 50% бюджета — крупнейшие по площади (очистка склада от больших кусков),
+                // 50% бюджета — лучшие по match-score к текущему ряду (точное попадание в размер).
+                // Дедупликация: если остаток попал в обе группы, место освобождается.
+                int halfBudget = budget / 2;
+                int otherHalf = budget - halfBudget;
+
+                // Группа 1: top по площади
+                var topByArea = feasibleNonVirtual
+                    .OrderByDescending(r => r.Area)
+                    .Take(halfBudget)
+                    .ToList();
+                var selectedIds = new HashSet<Guid>(topByArea.Select(r => r.Id));
+
+                // Группа 2: top по match-score (насколько хорошо остаток подходит к текущему ряду)
+                // Match-score = min(remnantHeight, rowHeight) / max(remnantHeight, rowHeight)
+                //             × min(remnantWidth, segmentAvgWidth) / max(remnantWidth, segmentAvgWidth)
+                // Высокий score = остаток хорошо вписывается по габаритам.
+                double avgSegWidth = currentRow?.Segments.Count > 0
+                    ? currentRow.Segments.Average(s => s.Width)
+                    : 1200.0;
+
+                var topByMatch = feasibleNonVirtual
+                    .Where(r => !selectedIds.Contains(r.Id))
+                    .Select(r =>
+                    {
+                        double heightFit = Math.Min(r.Height, rowHeight) / Math.Max(r.Height, rowHeight);
+                        double widthFit = Math.Min(r.Width, avgSegWidth) / Math.Max(r.Width, avgSegWidth);
+                        double matchScore = heightFit * widthFit;
+                        return (Remnant: r, MatchScore: matchScore);
+                    })
+                    .OrderByDescending(x => x.MatchScore)
+                    .Take(otherHalf)
+                    .Select(x => x.Remnant)
+                    .ToList();
+
                 result.AddRange(topByArea);
+                result.AddRange(topByMatch);
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"DEBUG [RollingHorizonEngine] Row {rowIndex}: B3 hybrid selection: " +
+                    $"{topByArea.Count} by area + {topByMatch.Count} by match-score = {topByArea.Count + topByMatch.Count} total");
             }
 
             int dropped = allStock.Count - result.Count;

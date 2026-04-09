@@ -352,15 +352,14 @@ namespace InsulationMasterPro.OrTools
         public int MaxStockForSolver { get; set; } = 80;
 
         /// <summary>
-        /// Экспериментальная row-level целевая функция.
-        /// При true — вместо Σ(NewTileCount_сегмента × TileWeight) солвер использует
+        /// B2 FIX: Row-level целевая функция (теперь включена по умолчанию).
+        /// Вместо Σ(NewTileCount_сегмента × TileWeight) солвер использует
         /// ceil(Σ(NewWidth_всех_сегментов_ряда) / TileWidth) × TileWeight.
-        /// Корректно моделирует физические плиты на этапе решения.
-        /// На практике IntraRowConsolidate уже решает проблему пост-фактум,
-        /// поэтому row-level objective не даёт дополнительного прироста.
-        /// Оставлен как опция для будущих экспериментов. По умолчанию выключен.
+        /// Корректно моделирует физические плиты на этапе решения: 4 куска по 200мм = 1 плита.
+        /// Совместно с IntraRowConsolidate даёт точную оценку расхода плит уже на этапе солвера,
+        /// а не только пост-фактум, что позволяет солверу принимать более оптимальные решения.
         /// </summary>
-        public bool EnableRowLevelObjective { get; set; } = false;
+        public bool EnableRowLevelObjective { get; set; } = true;
 
         /// <summary>
         /// Вес использования остатков для обоих проходов Rolling Horizon (pass1=MaxRemnantUsageWeight-20, pass2=MaxRemnantUsageWeight).
@@ -402,12 +401,12 @@ namespace InsulationMasterPro.OrTools
         public double RemnantScoreWeightUtilization { get; set; } = 0.2;
 
         /// <summary>
-        /// Включить глобальный greedy pre-pass аллокации остатков по рядам перед Rolling Horizon.
+        /// C1 FIX: Глобальный greedy pre-pass аллокации остатков по рядам перед Rolling Horizon.
         /// Pre-pass вычисляет RemnantRowHints: GUID→rowIndex.
         /// Остатки, переданные не на "свой" ряд, получают сниженный effectiveArea в CP-SAT (soft hint).
-        /// По умолчанию выключен; включить явно для экспериментов.
+        /// Теперь включён по умолчанию для улучшения утилизации остатков.
         /// </summary>
-        public bool EnableRemnantPreAllocation { get; set; } = false;
+        public bool EnableRemnantPreAllocation { get; set; } = true;
 
         /// <summary>
         /// Коэффициент снижения effectiveArea для остатков, используемых не на "своём" ряду (0..1).

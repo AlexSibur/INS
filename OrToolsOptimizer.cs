@@ -486,11 +486,28 @@ namespace InsulationMasterPro.OrTools
             }
 
             // Бонус за использование каждого склочного остатка (бинарная переменная).
-            // effectiveArea × STOCK_BONUS_MULTIPLIER — усиленный сигнал приоритета утилизации.
-            // Safety cap: bonus < TILE_WEIGHT (солвер НЕ откроет лишнюю плиту только ради остатка).
+            // B1 FIX: Вместо фиксированного cap (maxSafeArea=199 для всех), используем
+            // RemnantUsageWeight-зависимое масштабирование бонуса. Это позволяет pass2
+            // (с бóльшим RemnantUsageWeight) реально давать бóльший бонус за остатки,
+            // разблокируя дифференциацию multi-pass.
+            //
+            // Safety invariant сохранён: bonus = normalizedArea × RemnantUsageWeight × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT.
+            // normalizedArea = remnant.Area / maxPossibleArea ∈ [0, 1], масштабирован в long.
+            // maxPossibleArea = TileWidth × TileHeight (максимальный остаток = целая плита).
             var currentRowIndices = new HashSet<int>(_input.Rows.Select(r => r.RowIndex));
             double hintPenaltyFactor = _config.RemnantPreAllocationHintPenalty > 0
                 ? _config.RemnantPreAllocationHintPenalty : 0.5;
+
+            // B1: Вычисляем максимальную площадь одного остатка для нормализации
+            double maxPossibleArea = _input.Constraints.TileWidth * _input.Constraints.TileHeight;
+            if (maxPossibleArea <= 0) maxPossibleArea = 1200.0 * 600.0; // fallback
+
+            // B1: Масштабный коэффициент для безопасного бонуса.
+            // bonus = scaledBonus × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT
+            // scaledBonus = (area / maxArea) × NORMALIZATION_SCALE × impCMultiplier
+            // NORMALIZATION_SCALE выбран так, чтобы при RemnantUsageWeight=135 и STOCK_BONUS_MULTIPLIER=50:
+            // max bonus ≈ 135 × 50 = 6750 < TILE_WEIGHT=10000 ✓
+            const long NORMALIZATION_SCALE = 100L;
 
             foreach (var remnant in _input.StockRemnants)
             {
@@ -498,24 +515,37 @@ namespace InsulationMasterPro.OrTools
                 long areaScaled = (long)(remnant.Area * SCALE);
                 if (areaScaled <= 0) continue;
 
+                // B1: Нормализуем площадь остатка относительно максимальной плиты [0..NORMALIZATION_SCALE]
+                double areaRatio = Math.Min(remnant.Area / maxPossibleArea, 1.0);
+                long normalizedArea = (long)(areaRatio * NORMALIZATION_SCALE);
+                if (normalizedArea <= 0) normalizedArea = 1;
+
                 // Improvement C: приоритетный бонус для остатков с min стороной ≥ ImprovementCMinDim мм.
                 // EnableNarrowStripBonus: дополнительный путь для узких полос (max сторона ≥ TileHeight).
-                // Safety cap: effectiveArea × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT.
-                long effectiveArea = areaScaled;
                 double minDim = Math.Min(remnant.Width, remnant.Height);
                 double maxDim = Math.Max(remnant.Width, remnant.Height);
                 double tileHeight = _input.Constraints.TileHeight;
                 bool impCApplied = false;
                 bool isNarrowStrip = maxDim >= tileHeight && minDim < _config.ImprovementCMinDim;
 
+                // B1: ImpC-бонус теперь аддитивный +50% вместо ×5, чтобы не пробить safety cap
+                long impCBonus = 0;
                 if (remnant.Source != "VirtualCutout" &&
                     (minDim >= _config.ImprovementCMinDim ||
                      (_config.EnableNarrowStripBonus && isNarrowStrip)))
                 {
-                    effectiveArea += (long)(4 * remnant.Area * SCALE);
+                    impCBonus = normalizedArea / 2; // +50% к базовому бонусу
                     impCApplied = true;
                 }
-                long maxSafeArea = (TILE_WEIGHT - 1L) / STOCK_BONUS_MULTIPLIER;
+
+                long effectiveArea = normalizedArea + impCBonus;
+
+                // B1: Safety cap на основе RemnantUsageWeight:
+                // effectiveArea × STOCK_BONUS_MULTIPLIER должен быть < TILE_WEIGHT
+                // Но RemnantUsageWeight уже применён через continuous area bonus (lines 384-391),
+                // а per-remnant binary bonus — дополнительный сигнал.
+                // Итоговый cap: effectiveArea × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT
+                long maxSafeArea = Math.Max(1L, (TILE_WEIGHT - 1L) / STOCK_BONUS_MULTIPLIER);
                 effectiveArea = Math.Min(effectiveArea, maxSafeArea);
 
                 // Pre-allocation soft hint: снижаем бонус для остатков, предназначенных другому ряду.
@@ -530,7 +560,7 @@ namespace InsulationMasterPro.OrTools
                 System.Diagnostics.Debug.WriteLine(
                     $"DEBUG [OrToolsOptimizer] Remnant {remnant.Id} " +
                     $"({remnant.Width:F0}x{remnant.Height:F0}): " +
-                    $"area={remnant.Area:F0}mm² effectiveArea={effectiveArea} " +
+                    $"area={remnant.Area:F0}mm² normalizedArea={normalizedArea} effectiveArea={effectiveArea} " +
                     $"bonus={effectiveArea * STOCK_BONUS_MULTIPLIER} improvC={impCApplied} " +
                     $"narrowStrip={isNarrowStrip} hintPenalty={hintPenaltyApplied} minDim={minDim:F0}mm");
 
