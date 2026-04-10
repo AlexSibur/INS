@@ -40,8 +40,8 @@ Console.WriteLine($"[HEADLESS] Found {facades.Count} facades and {windows.Count}
 var constraints = new OptimizationConstraints();
 int overallResult = 0;
 List<double>? syncedRowHeights = null;
-bool stockFlushLastFacade = true; // Stock Flush FIX: последний фасад получает независимый RowHeightForecaster
-Console.WriteLine($"[CONFIG] Row Sync: ON (Фасады 2-{facades.Count - 1}), Stock Flush: ON (последний фасад — независимая оптимизация)");
+bool stockFlushLastFacade = false; // Stock Flush ОТКЛЮЧЁН: все фасады обязаны использовать Row Sync для углового замыкания
+Console.WriteLine($"[CONFIG] Row Sync: ON (все фасады), Stock Flush: OFF (угловое замыкание требует единую сетку рядов)");
 
 // Единый склад для всех фасадов (как в реальной работе):
 // остатки от фасада 1 переходят в пул фасада 2 и т.д.
@@ -236,8 +236,8 @@ for (int facadeIndex = 0; facadeIndex < facades.Count; facadeIndex++)
         : 1.0;
     int boostedMaxRemnantWeight = Math.Min(137, (int)(135 * facadeBoostFactor));
 
-    // Stock Flush: увеличенный timeout для последнего фасада
-    int facadeTimeout = useStockFlush ? 180 : 90;
+    // Timeout для фасада (Stock Flush отключён — единый timeout)
+    int facadeTimeout = 90;
 
     var config = new OptimizerConfig
     {

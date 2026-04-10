@@ -18,13 +18,14 @@ namespace InsulationMasterPro.OrTools
 
         // Множитель для per-remnant бинарного бонуса (IsUsed × effectiveArea × STOCK_BONUS_MULTIPLIER).
         // Без множителя бонус = ~50-72, незначителен vs TileWeight=10000.
-        // С 50: max бонус = 72×50 = 3600 (значимый вторичный сигнал, но ниже TileWeight).
-        private const int STOCK_BONUS_MULTIPLIER = 50;
+        // С 80: maxSafeArea = (10000-1)/80 = 124, max бонус = 124×80 = 9920 < TileWeight ✔
+        // Увеличено с 50 до 80 для более агрессивной утилизации остатков.
+        private const int STOCK_BONUS_MULTIPLIER = 80;
 
         // Штраф за каждый неиспользованный остаток склада (не VirtualCutout).
         // Величина ниже STOCK_BONUS_MULTIPLIER, чтобы не конкурировать с бонусом за использование.
-        // Создаёт симметричное давление: бонус за использование + штраф за неиспользование.
-        private const int UNUSED_STOCK_PENALTY_FACTOR = 20;
+        // Увеличено с 20 до 35 для усиления давления на утилизацию.
+        private const int UNUSED_STOCK_PENALTY_FACTOR = 35;
 
         private readonly FacadeInput _input;
         private readonly Dictionary<(int, int), List<BlockPattern>> _patterns;
@@ -505,8 +506,8 @@ namespace InsulationMasterPro.OrTools
             // B1: Масштабный коэффициент для безопасного бонуса.
             // bonus = scaledBonus × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT
             // scaledBonus = (area / maxArea) × NORMALIZATION_SCALE × impCMultiplier
-            // NORMALIZATION_SCALE выбран так, чтобы при RemnantUsageWeight=135 и STOCK_BONUS_MULTIPLIER=50:
-            // max bonus ≈ 135 × 50 = 6750 < TILE_WEIGHT=10000 ✓
+            // NORMALIZATION_SCALE выбран так, чтобы при RemnantUsageWeight=135 и STOCK_BONUS_MULTIPLIER=80:
+            // max bonus ≈ 124 × 80 = 9920 < TILE_WEIGHT=10000 ✓
             const long NORMALIZATION_SCALE = 100L;
 
             foreach (var remnant in _input.StockRemnants)

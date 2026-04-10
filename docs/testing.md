@@ -35,7 +35,7 @@ dotnet build tools/DxfHeadlessRunner/DxfHeadlessRunner.csproj -c Release
 
 1. **Парсинг DXF** — текстовый парсер (без внешних библиотек) читает замкнутые LWPOLYLINE
 2. **Определение фасада/окон** — наибольший контур = фасад, остальные внутри = окна
-3. **Row Sync** — после Фасада 1 захватывает его сетку рядов и применяет к Фасадам 2…N-1; последний фасад — Stock Flush (B2)
+3. **Row Sync** — после Фасада 1 захватывает его сетку рядов и применяет ко **всем** Фасадам 2…N (угловое замыкание)
 4. **Препроцессинг** — `Preprocessor.DivideIntoRows` + `ClassifyRow` + `CreateSegments`
 5. **Оптимизация** — `RollingHorizonEngine` (построчно, pre-cut simulation, multi-pass)
 6. **Постпроцессинг** — `Postprocessor.ConvertToLayoutResult` + валидация
