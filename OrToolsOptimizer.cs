@@ -16,16 +16,10 @@ namespace InsulationMasterPro.OrTools
         private const double TOLERANCE = 0.001;
         private const int SCALE = 100; // Масштаб для преобразования double → int (OR-Tools работает с целыми)
 
-        // Множитель для per-remnant бинарного бонуса (IsUsed × effectiveArea × STOCK_BONUS_MULTIPLIER).
-        // Без множителя бонус = ~50-72, незначителен vs TileWeight=10000.
-        // С 80: maxSafeArea = (10000-1)/80 = 124, max бонус = 124×80 = 9920 < TileWeight ✔
-        // Увеличено с 50 до 80 для более агрессивной утилизации остатков.
-        private const int STOCK_BONUS_MULTIPLIER = 80;
-
-        // Штраф за каждый неиспользованный остаток склада (не VirtualCutout).
-        // Величина ниже STOCK_BONUS_MULTIPLIER, чтобы не конкурировать с бонусом за использование.
-        // Увеличено с 20 до 35 для усиления давления на утилизацию.
-        private const int UNUSED_STOCK_PENALTY_FACTOR = 35;
+        // [Variant C] SBM и USPF удалены — они вносили <0.001% от общего бонуса
+        // и дублировали continuous bonus через тот же BoolVar.
+        // Единственный механизм поощрения — continuous area bonus (ниже),
+        // нормализованный относительно площади одной плиты для баланса с TILE_WEIGHT.
 
         private readonly FacadeInput _input;
         private readonly Dictionary<(int, int), List<BlockPattern>> _patterns;
@@ -358,10 +352,9 @@ namespace InsulationMasterPro.OrTools
             //        Правильно моделирует физические плиты: 4 куска по 200мм = 1 плита.
             //
             // Общие члены (оба режима):
-            //    - Σ(used_remnant_area * REMNANT_WEIGHT)    ← поощрение утилизации остатков
-            //    + Σ(created_remnant_area)                  ← штраф за создание остатков
-            //    + Σ(cut_count)                             ← вторичный: меньше резов
-            //    + Σ(unused_stock_area)                     ← штраф за неиспользованные остатки
+            //    - Σ(normalized_remnant_area * REMNANT_WEIGHT) ← поощрение утилизации остатков
+            //    + Σ(created_remnant_area)                     ← штраф за создание остатков
+            //    + Σ(cut_count)                                ← вторичный: меньше резов
             int TILE_WEIGHT = _config.TileWeight;
             int REMNANT_USAGE_WEIGHT = _config.RemnantUsageWeight;
             double tileWidth = _input.Constraints.TileWidth;
@@ -369,8 +362,7 @@ namespace InsulationMasterPro.OrTools
 
             System.Diagnostics.Debug.WriteLine(
                 $"DEBUG [OrToolsOptimizer.BuildObjective] " +
-                $"TileWeight={TILE_WEIGHT} RemnantUsageWeight={REMNANT_USAGE_WEIGHT} " +
-                $"StockBonusMultiplier={STOCK_BONUS_MULTIPLIER}");
+                $"TileWeight={TILE_WEIGHT} RemnantUsageWeight={REMNANT_USAGE_WEIGHT}");
 
             foreach (var kvp in GetPatterns())
             {
@@ -382,7 +374,10 @@ namespace InsulationMasterPro.OrTools
 
                 var patternVar = patternVars[key];
 
-                // Бонус за используемую площадь остатков
+                // [Variant C] Бонус за используемую площадь остатков.
+                // SBM и USPF удалены — это единственный механизм поощрения утилизации.
+                // Высокий мультипликатор необходим: row-level целевая функция использует ceil(),
+                // поэтому мелкие остатки не снижают кол-во плит без сильного стимула.
                 var usedAreas = patterns.Select(p => (long)(p.UsedRemnantArea * SCALE)).ToArray();
                 if (usedAreas.Max() > 0)
                 {
@@ -486,116 +481,10 @@ namespace InsulationMasterPro.OrTools
                 }
             }
 
-            // Бонус за использование каждого склочного остатка (бинарная переменная).
-            // B1 FIX: Вместо фиксированного cap (maxSafeArea=199 для всех), используем
-            // RemnantUsageWeight-зависимое масштабирование бонуса. Это позволяет pass2
-            // (с бóльшим RemnantUsageWeight) реально давать бóльший бонус за остатки,
-            // разблокируя дифференциацию multi-pass.
-            //
-            // Safety invariant сохранён: bonus = normalizedArea × RemnantUsageWeight × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT.
-            // normalizedArea = remnant.Area / maxPossibleArea ∈ [0, 1], масштабирован в long.
-            // maxPossibleArea = TileWidth × TileHeight (максимальный остаток = целая плита).
-            var currentRowIndices = new HashSet<int>(_input.Rows.Select(r => r.RowIndex));
-            double hintPenaltyFactor = _config.RemnantPreAllocationHintPenalty > 0
-                ? _config.RemnantPreAllocationHintPenalty : 0.5;
-
-            // B1: Вычисляем максимальную площадь одного остатка для нормализации
-            double maxPossibleArea = _input.Constraints.TileWidth * _input.Constraints.TileHeight;
-            if (maxPossibleArea <= 0) maxPossibleArea = 1200.0 * 600.0; // fallback
-
-            // B1: Масштабный коэффициент для безопасного бонуса.
-            // bonus = scaledBonus × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT
-            // scaledBonus = (area / maxArea) × NORMALIZATION_SCALE × impCMultiplier
-            // NORMALIZATION_SCALE выбран так, чтобы при RemnantUsageWeight=135 и STOCK_BONUS_MULTIPLIER=80:
-            // max bonus ≈ 124 × 80 = 9920 < TILE_WEIGHT=10000 ✓
-            const long NORMALIZATION_SCALE = 100L;
-
-            foreach (var remnant in _input.StockRemnants)
-            {
-                if (!remnantUsedVars.ContainsKey(remnant.Id)) continue;
-                long areaScaled = (long)(remnant.Area * SCALE);
-                if (areaScaled <= 0) continue;
-
-                // B1: Нормализуем площадь остатка относительно максимальной плиты [0..NORMALIZATION_SCALE]
-                double areaRatio = Math.Min(remnant.Area / maxPossibleArea, 1.0);
-                long normalizedArea = (long)(areaRatio * NORMALIZATION_SCALE);
-                if (normalizedArea <= 0) normalizedArea = 1;
-
-                // Improvement C: приоритетный бонус для остатков с min стороной ≥ ImprovementCMinDim мм.
-                // EnableNarrowStripBonus: дополнительный путь для узких полос (max сторона ≥ TileHeight).
-                double minDim = Math.Min(remnant.Width, remnant.Height);
-                double maxDim = Math.Max(remnant.Width, remnant.Height);
-                double tileHeight = _input.Constraints.TileHeight;
-                bool impCApplied = false;
-                bool isNarrowStrip = maxDim >= tileHeight && minDim < _config.ImprovementCMinDim;
-
-                // B1: ImpC-бонус теперь аддитивный +50% вместо ×5, чтобы не пробить safety cap
-                long impCBonus = 0;
-                if (remnant.Source != "VirtualCutout" &&
-                    (minDim >= _config.ImprovementCMinDim ||
-                     (_config.EnableNarrowStripBonus && isNarrowStrip)))
-                {
-                    impCBonus = normalizedArea / 2; // +50% к базовому бонусу
-                    impCApplied = true;
-                }
-
-                long effectiveArea = normalizedArea + impCBonus;
-
-                // B1: Safety cap на основе RemnantUsageWeight:
-                // effectiveArea × STOCK_BONUS_MULTIPLIER должен быть < TILE_WEIGHT
-                // Но RemnantUsageWeight уже применён через continuous area bonus (lines 384-391),
-                // а per-remnant binary bonus — дополнительный сигнал.
-                // Итоговый cap: effectiveArea × STOCK_BONUS_MULTIPLIER < TILE_WEIGHT
-                long maxSafeArea = Math.Max(1L, (TILE_WEIGHT - 1L) / STOCK_BONUS_MULTIPLIER);
-                effectiveArea = Math.Min(effectiveArea, maxSafeArea);
-
-                // Pre-allocation soft hint: снижаем бонус для остатков, предназначенных другому ряду.
-                bool hintPenaltyApplied = false;
-                if (_input.RemnantRowHints.TryGetValue(remnant.Id, out int preferredRow)
-                    && !currentRowIndices.Contains(preferredRow))
-                {
-                    effectiveArea = (long)(effectiveArea * hintPenaltyFactor);
-                    hintPenaltyApplied = true;
-                }
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"DEBUG [OrToolsOptimizer] Remnant {remnant.Id} " +
-                    $"({remnant.Width:F0}x{remnant.Height:F0}): " +
-                    $"area={remnant.Area:F0}mm² normalizedArea={normalizedArea} effectiveArea={effectiveArea} " +
-                    $"bonus={effectiveArea * STOCK_BONUS_MULTIPLIER} improvC={impCApplied} " +
-                    $"narrowStrip={isNarrowStrip} hintPenalty={hintPenaltyApplied} minDim={minDim:F0}mm");
-
-                terms.Add(remnantUsedVars[remnant.Id] * (-(effectiveArea * STOCK_BONUS_MULTIPLIER)));
-            }
-
-            // Явный штраф за неиспользованные остатки склада (реальные, не VirtualCutout).
-            // Реализован через (1 - remnantUsedVar) × unusedPenalty:
-            //   если остаток использован → (1-1)×penalty = 0
-            //   если остаток не использован → (1-0)×penalty = penalty
-            // Это создаёт симметричное давление: бонус за использование + штраф за неиспользование.
-            long totalUnusedPenalty = 0;
-            int unusedPenaltyRemnants = 0;
-            foreach (var remnant in _input.StockRemnants)
-            {
-                if (remnant.Source == "VirtualCutout") continue;
-                if (!remnantUsedVars.ContainsKey(remnant.Id)) continue;
-                long areaScaledP = (long)(remnant.Area * SCALE);
-                if (areaScaledP <= 0) continue;
-
-                long unusedPenalty = areaScaledP * UNUSED_STOCK_PENALTY_FACTOR;
-                // (1 - remnantUsedVar) × penalty = penalty - remnantUsedVar × penalty
-                // Константа penalty добавляет фиксированный сдвиг (не влияет на оптимизацию),
-                // а вычтенный remnantUsedVar × penalty поощряет использование.
-                terms.Add(LinearExpr.WeightedSum(
-                    new[] { remnantUsedVars[remnant.Id] },
-                    new long[] { -unusedPenalty }));
-                totalUnusedPenalty += unusedPenalty;
-                unusedPenaltyRemnants++;
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"DEBUG [OrToolsOptimizer] Unused stock penalty: {unusedPenaltyRemnants} remnants, " +
-                $"total dynamic penalty={totalUnusedPenalty} (each active × UNUSED_STOCK_PENALTY_FACTOR={UNUSED_STOCK_PENALTY_FACTOR})");
+            // [Variant C] SBM binary bonus и USPF unused penalty удалены.
+            // Единственный механизм — continuous area bonus выше (нормализованный).
+            // Pre-allocation hints остаются как soft signal через RemnantRowHints
+            // (применяются в PatternGenerator при генерации паттернов).
 
             return LinearExpr.Sum(terms);
         }

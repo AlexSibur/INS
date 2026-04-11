@@ -13,6 +13,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,6 +31,14 @@
     <None Remove="tools\DxfHeadlessRunner\**" />
     <Compile Remove="tools\ExcelGenerator\**" />
     <None Remove="tools\ExcelGenerator\**" />
+    <Compile Remove="UserDialogService.cs" />
+    <Compile Remove="PluginCommands.cs" />
+    <Compile Remove="PluginInitializer.cs" />
+    <Compile Remove="VisualizationEngine.cs" />
+    <Compile Remove="LayoutEngine.cs" />
+    <Compile Remove="OptimizationEngine.cs" />
+    <Compile Remove="ValidationEngine.cs" />
+    <Compile Remove="LBootGenerator.cs" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">

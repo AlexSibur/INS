@@ -107,9 +107,8 @@ namespace InsulationMasterPro.OrTools
                 int adaptiveTimeout = Math.Max(15, TimeoutPerWindowSeconds * 3);
 
                 // === Проход 1: стандартные веса ===
-                // TileWeight=10000, SCALE=100 → порог безопасности RemnantUsageWeight < 138.
-                // Pass1 = MaxRemnantUsageWeight-20 (умеренно агрессивный),
-                // Pass2 = MaxRemnantUsageWeight (максимально агрессивный в безопасном диапазоне).
+                // [Variant C] SBM и USPF удалены, continuous bonus — единственный механизм.
+                // Pass1 = MaxRUW-20 (умеренный), Pass2 = MaxRUW (агрессивный).
                 int effectiveTileWeight = _config.TileWeight > 0 ? _config.TileWeight : 10_000;
                 int maxRemnantWeight = _config.MaxRemnantUsageWeight > 0 ? _config.MaxRemnantUsageWeight : 135;
                 int pass1RemnantWeight = Math.Max(80, maxRemnantWeight - 20);
@@ -151,7 +150,7 @@ namespace InsulationMasterPro.OrTools
 
                 if (MultiPassEnabled)
                 {
-                    // Pass2 использует MaxRemnantUsageWeight (максимальный безопасный сигнал ≤ 137).
+                    // Pass2 использует MaxRemnantUsageWeight (агрессивная утилизация).
                     var pass2Config = new OptimizerConfig
                     {
                         TimeoutSeconds = adaptiveTimeout,
@@ -254,6 +253,7 @@ namespace InsulationMasterPro.OrTools
                 int adaptiveTimeout = Math.Max(15, TimeoutPerWindowSeconds * 3);
 
                 // Headless-путь унифицирован с AutoCAD-путём: те же веса pass1/pass2.
+                // [Variant C] SBM и USPF удалены, continuous bonus — единственный механизм.
                 int effectiveTileWeightH = _config.TileWeight > 0 ? _config.TileWeight : 10_000;
                 int maxRemnantWeightH = _config.MaxRemnantUsageWeight > 0 ? _config.MaxRemnantUsageWeight : 135;
                 int pass1RemnantWeightH = Math.Max(80, maxRemnantWeightH - 20);

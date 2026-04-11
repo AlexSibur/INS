@@ -234,6 +234,9 @@ for (int facadeIndex = 0; facadeIndex < facades.Count; facadeIndex++)
     double facadeBoostFactor = facades.Count > 1
         ? 1.3 - 0.3 * facadeIndex / (facades.Count - 1.0)
         : 1.0;
+    // [Variant C] SBM и USPF удалены. Continuous bonus остаётся единственным механизмом.
+    // Высокий множитель необходим: row-level objective использует ceil(), поэтому
+    // мелкие остатки не снижают кол-во плит без сильного стимула.
     int boostedMaxRemnantWeight = Math.Min(137, (int)(135 * facadeBoostFactor));
 
     // Timeout для фасада (Stock Flush отключён — единый timeout)
