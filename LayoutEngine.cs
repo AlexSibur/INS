@@ -124,10 +124,11 @@ namespace InsulationMasterPro.Logic
                     
                     var facadeWindows = windows.Where(w => IsWindowInsideFacade(w, facade)).ToList();
                     
-                    // Stock Flush FIX: последний фасад выходит из Row Sync
-                    // и получает независимый RowHeightForecaster для максимальной утилизации остатков.
+                    // Stock Flush ОТКЛЮЧЁН (v3.7.0): нарушает инвариант углового замыкания.
+                    // Все фасады используют Row Sync — одинаковые высоты рядов из Фасада 1.
+                    bool stockFlushLastFacade = false;
                     bool isLastFacade = (facadeIdx == facades.Count);
-                    bool useStockFlush = isLastFacade && facades.Count > 1 && _rowSyncEnabled;
+                    bool useStockFlush = stockFlushLastFacade && isLastFacade && facades.Count > 1 && _rowSyncEnabled;
                     var currentSyncedHeights = (facadeIdx > 1 && !useStockFlush) ? _syncedRowHeights : null;
 
                     if (useStockFlush)
@@ -214,7 +215,7 @@ namespace InsulationMasterPro.Logic
 
             var grouped = facadesWithCenter
                 .GroupBy(fc => fc.CenterY, new YGroupComparer(yTolerance))
-                .OrderBy(g => g.Key)
+                .OrderByDescending(g => g.Key)
                 .ToList();
 
             var sorted = new List<Polyline>();

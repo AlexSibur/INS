@@ -166,7 +166,7 @@ namespace InsulationMasterPro.OrTools
         public double MinJointOffset { get; set; } = 100.0;
         public double ReleaseOverhang { get; set; } = 170.0;
         public double MinReleasePiece { get; set; } = 370.0;
-        public double MinRowHeight { get; set; } = 150.0;
+        public double MinRowHeight { get; set; } = 300.0;
         public double MinRemnantToSave { get; set; } = 150.0;
         public double TileWidth { get; set; } = 1200.0;
         public double TileHeight { get; set; } = 600.0;

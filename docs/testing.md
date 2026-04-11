@@ -195,13 +195,13 @@ dotnet test
 |---|--------|--------------|
 | 1 | Входные данные | Фасад, окна, склад — совпадают с чертежом |
 | 2 | Параметры | Constraints: TileWidth=1200, MinBlock=200 и т.д. |
-| 3 | Деление на ряды | Высоты (150..600), типы (Normal/BottomEdge/Middle/TopEdge) |
+| 3 | Деление на ряды | Высоты (300..600), типы (Normal/BottomEdge/Middle/TopEdge) |
 | 4 | Solver | Статус (Optimal), время решения |
 | 5 | Раскладка | Все блоки с координатами, ширинами, типами (New/Reuse/Cut) |
 | 6 | Маркировка | X.Y.NNN (плиты), X.Y.NNN.ZZ (остатки/lineage) |
 | 7 | Материальный баланс | Перерасход %, КПД, экономия от остатков, проверка баланса |
 | 8 | Склад (движение) | Использованные, созданные→БД, переиспользованные |
-| 9 | Валидация | C1 MinBlock, C12 Stagger, C12a CornerZone, C13 ConsecRemnants, CH MinRowHeight — pass/fail |
+| 9 | Валидация | C1 MinBlock, C12 Stagger, C12a CornerZone, C13 ConsecRemnants, CH MinRowHeight(≥300) — pass/fail |
 | 10 | Ошибки/Предупреждения | E_OVERCONSUMPTION, E_OVERLAP_IGNORED и т.д. |
 
 ## AI-анализ diagnostics.json
