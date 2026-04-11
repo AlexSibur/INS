@@ -124,6 +124,18 @@ namespace InsulationMasterPro.Logic
                     
                     var facadeWindows = windows.Where(w => IsWindowInsideFacade(w, facade)).ToList();
                     
+                    // Stock Flush ОТКЛЮЧЁН (v3.7.0): нарушает инвариант углового замыкания.
+                    // Все фасады используют Row Sync — одинаковые высоты рядов из Фасада 1.
+                    bool stockFlushLastFacade = false;
+                    bool isLastFacade = (facadeIdx == facades.Count);
+                    bool useStockFlush = stockFlushLastFacade && isLastFacade && facades.Count > 1 && _rowSyncEnabled;
+                    var currentSyncedHeights = (facadeIdx > 1 && !useStockFlush) ? _syncedRowHeights : null;
+
+                    if (useStockFlush)
+                    {
+                        result.Warnings.Add($"Stock Flush: Фасад {facadeIdx} — независимая сетка рядов для максимальной утилизации остатков");
+                    }
+
                     // Если это первый фасад, готовим спроецированные окна для Forecaster
                     List<WindowInfo> forecasterWindows = null;
                     if (facadeIdx == 1)
@@ -153,7 +165,7 @@ namespace InsulationMasterPro.Logic
                     
                     var facadeResult = ProcessSingleFacade(
                         facade, facadeWindows, lBoots, context, facadeIdx, 
-                        firstRowWithRelease, _syncedRowHeights, forecasterWindows);
+                        firstRowWithRelease, currentSyncedHeights, forecasterWindows);
                     MergeResults(result, facadeResult);
                     
                     if (facadeIdx == 1 && _rowSyncEnabled)
@@ -203,7 +215,7 @@ namespace InsulationMasterPro.Logic
 
             var grouped = facadesWithCenter
                 .GroupBy(fc => fc.CenterY, new YGroupComparer(yTolerance))
-                .OrderBy(g => g.Key)
+                .OrderByDescending(g => g.Key)
                 .ToList();
 
             var sorted = new List<Polyline>();

@@ -117,19 +117,28 @@ namespace InsulationMasterPro.OrTools
                 minFirstBlock, minMiddleBlock, minLastBlock,
                 0, remnantFirst: false, maxBlocks: maxBlocks);
 
-            // ═══ Фаза 2: Систематический перебор позиций для каждого остатка (шаг 10мм) ═══
-            // Для каждого остатка пробуем позиции от 0 до segmentWidth-rw с шагом 10мм.
-            // Предфильтр исключает заведомо невалидные позиции (prefix < minFirstBlock,
-            // суффикс < minLastBlock) до вызова TryHeuristicPattern — экономит бюджет паттернов.
-            // BFD-порядок: крупные остатки получают приоритет в бюджете паттернов.
-            //
-            // Бюджет Phase 2 = 2/3 от maxPatterns (был 1/3).
-            // Увеличение гарантирует, что при складе 40+ остатков все они успевают пройти sweep,
-            // а не только первые несколько крупнейших. Phase 3 по-прежнему получает остаток бюджета.
+            // ═══ Фаза 1.5 (Variant B): Жадное заполнение остатками ═══
+            // Greedy-fill: пакуем максимальное количество остатков в сегмент.
+            // Алгоритм: берём крупнейшие остатки один за другим, заполняем оставшееся новыми плитами.
+            // Генерирует 5-15 паттернов с 3-8+ остатками — гарантированные мульти-комбинации.
+            if (availableRemnants.Count >= 2)
+            {
+                TryGreedyFillRemnants(availableRemnants, segmentWidth, segment, row, constraints,
+                    patterns, seen, ref globalPatternId, maxPatterns, minFirstBlock, minLastBlock);
+            }
+
+            // ═══ Бюджетирование фаз (Variant A) ═══
+            // Phase 2 (одиночные остатки) получает 35% бюджета.
+            // Phase 2b-2d (мульти-комбинации) получают гарантированные 35% бюджета.
+            // Phase 3-4 получают оставшиеся 30%.
+            // Это предотвращает ситуацию, когда однократные комбинации съедают весь бюджет.
             const double SWEEP_STEP = 10.0;
-            int phase1PatternCount = patterns.Count; // количество паттернов после Phase 1
-            int phase2SingleBudget = phase1PatternCount + Math.Max(150, maxPatterns / 2);
+            int phase1PatternCount = patterns.Count; // количество паттернов после Phase 1 + greedy-fill
+            int remainingBudget = maxPatterns - phase1PatternCount;
+            int phase2SingleBudget = phase1PatternCount + Math.Max(100, (int)(remainingBudget * 0.35));
             int phase2BudgetCap = phase2SingleBudget;
+            int multiRemnantBudgetStart = phase2BudgetCap; // Phase 2b-2d начинают отсюда
+            int multiRemnantBudgetCap = multiRemnantBudgetStart + Math.Max(200, (int)(remainingBudget * 0.35));
 
             System.Diagnostics.Debug.WriteLine(
                 $"DEBUG [PatternGenerator] " +
@@ -188,10 +197,8 @@ namespace InsulationMasterPro.OrTools
             }
 
             // ═══ Фаза 2b: Два остатка в одном сегменте — sweep первого, второй вплотную за ним ═══
-            // R1 перебирается с шагом 10мм от начала до конца сегмента.
-            // R2 размещается сразу после R1 (вплотную). Это покрывает все позиции пары без O(N²×len²) взрыва.
-            // Дополнительно: классический вариант R1-начало/R2-конец для разделённых пар.
-            if (availableRemnants.Count >= 2 && patterns.Count < maxPatterns)
+            // Гарантированный бюджет multiRemnantBudgetCap для фаз 2b-2d (Variant A).
+            if (availableRemnants.Count >= 2 && patterns.Count < multiRemnantBudgetCap)
             {
                 int phase2bTopN = Math.Min(availableRemnants.Count, Math.Max(20, availableRemnants.Count / 3));
                 var topRemnants = availableRemnants
@@ -199,13 +206,13 @@ namespace InsulationMasterPro.OrTools
                     .Take(phase2bTopN)
                     .ToList();
 
-                for (int i = 0; i < topRemnants.Count && patterns.Count < maxPatterns; i++)
+                for (int i = 0; i < topRemnants.Count && patterns.Count < multiRemnantBudgetCap; i++)
                 {
                     var r1 = topRemnants[i];
                     double rw1 = GetUsableWidth(r1, row.Height);
                     if (rw1 < constraints.MinBlock) continue;
 
-                    for (int j = i + 1; j < topRemnants.Count && patterns.Count < maxPatterns; j++)
+                    for (int j = i + 1; j < topRemnants.Count && patterns.Count < multiRemnantBudgetCap; j++)
                     {
                         var r2 = topRemnants[j];
                         double rw2 = GetUsableWidth(r2, row.Height);
@@ -214,7 +221,7 @@ namespace InsulationMasterPro.OrTools
 
                         // Sweep: R1 на offset, R2 сразу за R1 — пара может оказаться в любом месте ряда
                         for (double offset = 0;
-                             offset <= segmentWidth - rw1 - rw2 + TOLERANCE && patterns.Count < maxPatterns;
+                             offset <= segmentWidth - rw1 - rw2 + TOLERANCE && patterns.Count < multiRemnantBudgetCap;
                              offset += SWEEP_STEP)
                         {
                             TryTwoRemnantsAtOffset(r1, rw1, r2, rw2, offset, segmentWidth, segment, row,
@@ -222,14 +229,14 @@ namespace InsulationMasterPro.OrTools
                         }
 
                         // Классика: R1 в начале, R2 в конце (разделённые остатки)
-                        if (patterns.Count < maxPatterns)
+                        if (patterns.Count < multiRemnantBudgetCap)
                             TryTwoRemnantsStartEnd(r1, rw1, r2, rw2, segmentWidth, segment, row,
                                 constraints, patterns, seen, ref globalPatternId, minFirstBlock, minLastBlock);
                     }
                 }
             }
             // ═══ Фаза 2c: Чередование остатков (≥3 остатков в ряду) ═══
-            if (availableRemnants.Count >= 3 && patterns.Count < maxPatterns)
+            if (availableRemnants.Count >= 3 && patterns.Count < multiRemnantBudgetCap)
             {
                 int phase2cTopN = Math.Min(availableRemnants.Count, Math.Max(25, availableRemnants.Count / 3));
                 var topRemnants = availableRemnants
@@ -242,15 +249,12 @@ namespace InsulationMasterPro.OrTools
                 TryAlternatingRemnantsRecursive(
                     currentBlocksForAlt, usedIdsForAlt, 0, segmentWidth,
                     segment, row, topRemnants, constraints,
-                    patterns, seen, ref globalPatternId, maxPatterns,
+                    patterns, seen, ref globalPatternId, multiRemnantBudgetCap,
                     minFirstBlock, minLastBlock);
             }
 
             // ═══ Фаза 2d: Чередование ПАР остатков (R+R)+T+(R+R)+T+... ═══
-            // Покрывает паттерн, где MaxConsecutiveRemnants=2, а пары разделены целыми плитами.
-            // Пример на 15770мм фасаде: R(600)+R(400)+T(1200)+R(500)+R(700)+T(1200)+R(300)+R(900)...
-            // Phase 2c покрывает R→T→R→T (одиночные), но не R+R→T→R+R→T (пары).
-            if (availableRemnants.Count >= 4 && patterns.Count < maxPatterns)
+            if (availableRemnants.Count >= 4 && patterns.Count < multiRemnantBudgetCap)
             {
                 int phase2dTopN = Math.Min(availableRemnants.Count, Math.Max(20, availableRemnants.Count / 3));
                 var topRemnantsForPair = availableRemnants
@@ -263,10 +267,15 @@ namespace InsulationMasterPro.OrTools
                 TryPairAlternatingRecursive(
                     currentBlocksForPair, usedIdsForPair, 0, segmentWidth,
                     segment, row, topRemnantsForPair, constraints,
-                    patterns, seen, ref globalPatternId, maxPatterns,
+                    patterns, seen, ref globalPatternId, multiRemnantBudgetCap,
                     minFirstBlock, minLastBlock,
-                    pairPhase: 0); // 0=начало пары, 1=второй в паре
+                    pairPhase: 0);
             }
+
+            int multiRemnantPatternsGenerated = patterns.Count(p => p.UsedRemnantIds.Count >= 2);
+            System.Diagnostics.Debug.WriteLine(
+                $"DEBUG [PatternGenerator] Multi-remnant patterns: {multiRemnantPatternsGenerated} " +
+                $"(budget used: {patterns.Count - multiRemnantBudgetStart}/{multiRemnantBudgetCap - multiRemnantBudgetStart})");
 
             // ═══ Фаза 3: Подстановка остатков вместо обрезанных новых плит (Эвристика J) ═══
             // Берём паттерны Фазы 1 (только новые плиты) и заменяем частичную плиту на подходящий остаток.
@@ -1054,6 +1063,402 @@ namespace InsulationMasterPro.OrTools
                         minFirstBlock, minLastBlock, pairPhase: 0);
                     currentBlocks.RemoveAt(currentBlocks.Count - 1);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Variant B: Жадное заполнение сегмента остатками (greedy-fill).
+        /// Генерирует несколько паттернов с максимальным количеством остатков.
+        /// Стратегии:
+        ///   1. BFD (Best Fit Decreasing): крупнейшие остатки первыми
+        ///   2. FFD (First Fit Decreasing): первый подходящий остаток
+        ///   3. Random shuffle (3 варианта): перемешиваем порядок остатков
+        /// Каждая стратегия жадно пакует остатки, заполняя промежутки новыми плитами.
+        /// Генерирует 5-10 паттернов с 3-8+ остатками каждый.
+        /// </summary>
+        private static void TryGreedyFillRemnants(
+            List<Remnant> availableRemnants, double segmentWidth,
+            RowSegment segment, RowDefinition row, OptimizationConstraints constraints,
+            List<BlockPattern> patterns, HashSet<string> seen,
+            ref int globalPatternId, int maxPatterns,
+            double minFirstBlock, double minLastBlock)
+        {
+            // Макс. бюджет для greedy-fill: масштабируется по числу пригодных остатков.
+            // При малом кол-ве остатков (напр., только virtual cutouts) — бюджет маленький,
+            // чтобы не отнимать место у Phase 2/3. При большом складе — до 80 паттернов.
+            int feasibleCount = availableRemnants.Count(r => GetUsableWidth(r, row.Height) >= constraints.MinBlock);
+            int greedyBudget = Math.Min(80, Math.Min(maxPatterns - patterns.Count, Math.Max(10, feasibleCount / 3)));
+            if (greedyBudget <= 0) return;
+
+            int greedyStartCount = patterns.Count;
+            int budgetCap = greedyStartCount + greedyBudget;
+
+            // Подготовка: фильтруем остатки, подходящие для данного ряда
+            var feasible = availableRemnants
+                .Where(r => GetUsableWidth(r, row.Height) >= constraints.MinBlock)
+                .ToList();
+
+            if (feasible.Count < 2) return;
+
+            // ═══ Segment-Diversification ═══
+            // Ключевая проблема: все сегменты в ряду генерируют greedy-fill паттерны
+            // из одного и того же списка остатков в одинаковом порядке.
+            // Солвер может назначить каждый остаток только одному сегменту,
+            // поэтому если все сегменты хотят одни и те же остатки — большинство
+            // greedy паттернов не выбирается.
+            //
+            // Решение: ротируем/сдвигаем список остатков на основе segmentIndex,
+            // чтобы разные сегменты начинали с разных остатков.
+            int segIdx = segment.SegmentIndex;
+
+            // Шаг ротации: сдвигаем на segIdx * (feasible.Count / 5) позиций
+            // (5 — типичное макс. кол-во сегментов в ряду с окнами)
+            int rotateStep = Math.Max(1, feasible.Count / 5);
+            int rotateOffset = (segIdx * rotateStep) % feasible.Count;
+
+            // --- Стратегия 1: BFD с ротацией по сегменту ---
+            var bfdOrder = feasible.OrderByDescending(r => GetUsableWidth(r, row.Height)).ToList();
+            var bfdRotated = RotateList(bfdOrder, rotateOffset);
+            TryGreedyFillWithOrder(bfdRotated, segmentWidth, segment, row, constraints,
+                patterns, seen, ref globalPatternId, budgetCap, minFirstBlock, minLastBlock);
+
+            // --- Стратегия 2: FFD ascending с ротацией ---
+            var ffdOrder = feasible.OrderBy(r => GetUsableWidth(r, row.Height)).ToList();
+            var ffdRotated = RotateList(ffdOrder, rotateOffset);
+            TryGreedyFillWithOrder(ffdRotated, segmentWidth, segment, row, constraints,
+                patterns, seen, ref globalPatternId, budgetCap, minFirstBlock, minLastBlock);
+
+            // --- Стратегия 3: Partition-based — сегмент берёт свою «долю» остатков ---
+            // Делим остатки на 5 групп по индексу; сегмент получает свою группу первой,
+            // затем все остальные. Гарантирует минимальное перекрытие между сегментами.
+            if (feasible.Count >= 5 && patterns.Count < budgetCap)
+            {
+                int groupSize = feasible.Count / 5;
+                int startIdx = (segIdx % 5) * groupSize;
+                var partitioned = new List<Remnant>();
+                // Своя группа первой
+                for (int i = startIdx; i < startIdx + groupSize && i < feasible.Count; i++)
+                    partitioned.Add(bfdOrder[i]);
+                // Затем остальные
+                for (int i = 0; i < feasible.Count; i++)
+                {
+                    if (i < startIdx || i >= startIdx + groupSize)
+                        partitioned.Add(bfdOrder[i]);
+                }
+                TryGreedyFillWithOrder(partitioned, segmentWidth, segment, row, constraints,
+                    patterns, seen, ref globalPatternId, budgetCap, minFirstBlock, minLastBlock);
+            }
+
+            // --- Стратегии 4-6: случайные перестановки (seed зависит от сегмента) ---
+            var rng = new Random(segment.RowIndex * 10000 + segment.SegmentIndex * 137);
+            for (int shuffle = 0; shuffle < 3 && patterns.Count < budgetCap; shuffle++)
+            {
+                var shuffled = feasible.OrderBy(_ => rng.Next()).ToList();
+                TryGreedyFillWithOrder(shuffled, segmentWidth, segment, row, constraints,
+                    patterns, seen, ref globalPatternId, budgetCap, minFirstBlock, minLastBlock);
+            }
+
+            // --- Стратегия 7: interleave (крупный-мелкий) с ротацией ---
+            if (patterns.Count < budgetCap && feasible.Count >= 4)
+            {
+                var sorted = feasible.OrderByDescending(r => GetUsableWidth(r, row.Height)).ToList();
+                var interleaved = new List<Remnant>();
+                int lo = 0, hi = sorted.Count - 1;
+                bool pickHi = true;
+                while (lo <= hi)
+                {
+                    interleaved.Add(pickHi ? sorted[lo++] : sorted[hi--]);
+                    pickHi = !pickHi;
+                }
+                var intRotated = RotateList(interleaved, rotateOffset);
+                TryGreedyFillWithOrder(intRotated, segmentWidth, segment, row, constraints,
+                    patterns, seen, ref globalPatternId, budgetCap, minFirstBlock, minLastBlock);
+            }
+
+            // --- Стратегии 8-10: BFD со сдвигом 1/3, 2/3 от списка ---
+            // Эти стратегии создают паттерны из «средних» и «хвостовых» остатков,
+            // которые обычно не попадают в первые стратегии.
+            for (int shift = 1; shift <= 2 && patterns.Count < budgetCap; shift++)
+            {
+                int shiftOffset = (feasible.Count * shift) / 3;
+                var shifted = RotateList(bfdOrder, shiftOffset);
+                TryGreedyFillWithOrder(shifted, segmentWidth, segment, row, constraints,
+                    patterns, seen, ref globalPatternId, budgetCap, minFirstBlock, minLastBlock);
+            }
+
+            int greedyGenerated = patterns.Count - greedyStartCount;
+            if (greedyGenerated > 0)
+            {
+                int maxRemnants = patterns.Skip(greedyStartCount).Take(greedyGenerated)
+                    .Max(p => p.UsedRemnantIds.Count);
+                System.Diagnostics.Debug.WriteLine(
+                    $"[GREEDY-FILL] Row {row.RowIndex} Seg {segment.SegmentIndex}: " +
+                    $"generated {greedyGenerated} patterns, max remnants in one pattern = {maxRemnants}");
+            }
+            else if (feasible.Count >= 2)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[GREEDY-FILL] Row {row.RowIndex} Seg {segment.SegmentIndex}: " +
+                    $"0 patterns from {feasible.Count} feasible remnants (segW={segmentWidth:F0})");
+            }
+        }
+
+        /// <summary>
+        /// Ротирует список: элементы начиная с offset идут первыми, затем [0..offset-1].
+        /// </summary>
+        private static List<T> RotateList<T>(List<T> list, int offset)
+        {
+            if (offset <= 0 || offset >= list.Count) return list;
+            var rotated = new List<T>(list.Count);
+            for (int i = offset; i < list.Count; i++) rotated.Add(list[i]);
+            for (int i = 0; i < offset; i++) rotated.Add(list[i]);
+            return rotated;
+        }
+
+        /// <summary>
+        /// Вспомогательный метод для greedy-fill: жадно пакует остатки в заданном порядке.
+        /// Между остатками вставляет новые плиты (целые, если возможно).
+        /// Генерирует 2 варианта:
+        ///   A) Остатки подряд с разделителями;
+        ///   B) R+R пары с разделителем T между ними.
+        /// Tail-gap fix: если хвост < MinBlock, последняя плита расщепляется на две,
+        /// чтобы каждый блок ≥ MinBlock.
+        /// </summary>
+        private static void TryGreedyFillWithOrder(
+            List<Remnant> orderedRemnants, double segmentWidth,
+            RowSegment segment, RowDefinition row, OptimizationConstraints constraints,
+            List<BlockPattern> patterns, HashSet<string> seen,
+            ref int globalPatternId, int budgetCap,
+            double minFirstBlock, double minLastBlock)
+        {
+            if (patterns.Count >= budgetCap) return;
+
+            // Вариант A: жадно кладём остатки слева направо, заполняя промежутки целыми плитами
+            {
+                var blocks = new List<Block>();
+                var usedIds = new HashSet<Guid>();
+                double x = 0;
+
+                foreach (var remnant in orderedRemnants)
+                {
+                    if (usedIds.Contains(remnant.Id)) continue;
+                    double rw = GetUsableWidth(remnant, row.Height);
+                    if (rw < constraints.MinBlock) continue;
+
+                    double remaining = segmentWidth - x;
+                    if (rw > remaining + TOLERANCE) continue; // не помещается
+
+                    // Проверяем первый блок minFirstBlock
+                    if (blocks.Count == 0 && rw < minFirstBlock - TOLERANCE) continue;
+
+                    blocks.Add(new Block
+                    {
+                        X = segment.StartX + x,
+                        Width = rw,
+                        Type = BlockType.Remnant,
+                        RemnantId = remnant.Id,
+                        CutFrom = rw,
+                        IsRotated = remnant.Height < row.Height && remnant.Width >= row.Height
+                    });
+                    usedIds.Add(remnant.Id);
+                    x += rw;
+
+                    // Если осталось достаточно для целой плиты + ещё блок — вставим разделитель
+                    remaining = segmentWidth - x;
+                    if (remaining >= constraints.TileWidth + constraints.MinBlock)
+                    {
+                        blocks.Add(new Block
+                        {
+                            X = segment.StartX + x,
+                            Width = constraints.TileWidth,
+                            Type = BlockType.New
+                        });
+                        x += constraints.TileWidth;
+                    }
+                }
+
+                // Заполняем хвост новыми плитами (smart-fill: обрабатывает tail-gap)
+                GreedyFillTail(blocks, ref x, segmentWidth, segment, constraints, minLastBlock);
+
+                // Регистрируем паттерн, если содержит ≥2 остатков и покрывает весь сегмент
+                if (usedIds.Count >= 2 && Math.Abs(segmentWidth - x) < TOLERANCE)
+                {
+                    string key = PatternKey(blocks);
+                    if (seen.Add(key) && patterns.Count < budgetCap)
+                    {
+                        patterns.Add(CreatePattern(blocks, segment, row, usedIds, ref globalPatternId, constraints));
+                    }
+                }
+            }
+
+            if (patterns.Count >= budgetCap) return;
+
+            // Вариант B: кладём R+R (пары) с разделителем T между парами
+            {
+                var blocks = new List<Block>();
+                var usedIds = new HashSet<Guid>();
+                double x = 0;
+                int consecutiveRemnants = 0;
+
+                foreach (var remnant in orderedRemnants)
+                {
+                    if (usedIds.Contains(remnant.Id)) continue;
+                    double rw = GetUsableWidth(remnant, row.Height);
+                    if (rw < constraints.MinBlock) continue;
+
+                    double remaining = segmentWidth - x;
+                    if (rw > remaining + TOLERANCE) continue;
+
+                    if (blocks.Count == 0 && rw < minFirstBlock - TOLERANCE) continue;
+
+                    // После 2 последовательных остатков — вставляем целую плиту
+                    if (consecutiveRemnants >= 2)
+                    {
+                        remaining = segmentWidth - x;
+                        if (remaining >= constraints.TileWidth + rw)
+                        {
+                            blocks.Add(new Block
+                            {
+                                X = segment.StartX + x,
+                                Width = constraints.TileWidth,
+                                Type = BlockType.New
+                            });
+                            x += constraints.TileWidth;
+                            consecutiveRemnants = 0;
+                            remaining = segmentWidth - x;
+                            if (rw > remaining + TOLERANCE) continue;
+                        }
+                        else continue; // не хватает места для разделителя + остатка
+                    }
+
+                    blocks.Add(new Block
+                    {
+                        X = segment.StartX + x,
+                        Width = rw,
+                        Type = BlockType.Remnant,
+                        RemnantId = remnant.Id,
+                        CutFrom = rw,
+                        IsRotated = remnant.Height < row.Height && remnant.Width >= row.Height
+                    });
+                    usedIds.Add(remnant.Id);
+                    x += rw;
+                    consecutiveRemnants++;
+                }
+
+                // Заполняем хвост новыми плитами (smart-fill)
+                GreedyFillTail(blocks, ref x, segmentWidth, segment, constraints, minLastBlock);
+
+                if (usedIds.Count >= 2 && Math.Abs(segmentWidth - x) < TOLERANCE)
+                {
+                    string key = PatternKey(blocks);
+                    if (seen.Add(key) && patterns.Count < budgetCap)
+                    {
+                        patterns.Add(CreatePattern(blocks, segment, row, usedIds, ref globalPatternId, constraints));
+                    }
+                }
+            }
+
+        }
+
+        /// <summary>
+        /// Заполняет оставшееся пространство сегмента новыми плитами.
+        /// Если хвост (remainder % TileWidth) меньше MinBlock, последние две плиты
+        /// делятся пополам, чтобы каждый блок ≥ MinBlock.
+        /// </summary>
+        private static void GreedyFillTail(
+            List<Block> blocks, ref double x, double segmentWidth,
+            RowSegment segment, OptimizationConstraints constraints,
+            double minLastBlock)
+        {
+            double rem = segmentWidth - x;
+            if (rem <= TOLERANCE) return;
+
+            // Сколько плит нужно для заполнения?
+            int nTiles = Math.Max(1, (int)Math.Ceiling(rem / constraints.TileWidth));
+
+            // Проверяем: если последняя плита будет слишком маленькой, добавим ещё одну
+            // и распределим пространство равномерно
+            double lastTileW = rem - (nTiles - 1) * constraints.TileWidth;
+            double minAllowed = Math.Max(minLastBlock, constraints.MinBlock);
+            if (lastTileW < minAllowed - TOLERANCE && lastTileW > TOLERANCE && nTiles > 1)
+            {
+                // Хвост слишком маленький — перераспределяем последние 2 плиты
+                // (nTiles-2 полных плит) + (2 плиты делят оставшееся поровну)
+                double lastTwoSpace = rem - (nTiles - 2) * constraints.TileWidth;
+                double halfW = lastTwoSpace / 2.0;
+                if (halfW >= minAllowed)
+                {
+                    // Кладём nTiles-2 полных плит, затем 2 по halfW
+                    for (int i = 0; i < nTiles - 2; i++)
+                    {
+                        blocks.Add(new Block
+                        {
+                            X = segment.StartX + x,
+                            Width = constraints.TileWidth,
+                            Type = BlockType.New
+                        });
+                        x += constraints.TileWidth;
+                    }
+                    // Первая половинка
+                    blocks.Add(new Block
+                    {
+                        X = segment.StartX + x,
+                        Width = Math.Floor(halfW),
+                        Type = BlockType.New
+                    });
+                    x += Math.Floor(halfW);
+                    // Вторая — точный остаток
+                    double finalW = segmentWidth - x;
+                    if (finalW >= minAllowed - TOLERANCE)
+                    {
+                        blocks.Add(new Block
+                        {
+                            X = segment.StartX + x,
+                            Width = finalW,
+                            Type = BlockType.New
+                        });
+                        x += finalW;
+                    }
+                    return;
+                }
+            }
+
+            // Стандартный случай: кладём полные плиты + хвост
+            for (int i = 0; i < nTiles; i++)
+            {
+                double w;
+                if (i < nTiles - 1)
+                {
+                    w = constraints.TileWidth;
+                }
+                else
+                {
+                    w = segmentWidth - x; // последняя плита — точный остаток
+                }
+
+                if (w < constraints.MinBlock - TOLERANCE && blocks.Count > 0)
+                {
+                    // Слишком маленький хвост — поглощаем в предыдущий блок
+                    if (blocks[blocks.Count - 1].Type == BlockType.New)
+                    {
+                        blocks[blocks.Count - 1] = new Block
+                        {
+                            X = blocks[blocks.Count - 1].X,
+                            Width = blocks[blocks.Count - 1].Width + w,
+                            Type = BlockType.New
+                        };
+                        x += w;
+                    }
+                    break;
+                }
+
+                blocks.Add(new Block
+                {
+                    X = segment.StartX + x,
+                    Width = w,
+                    Type = BlockType.New
+                });
+                x += w;
             }
         }
 

@@ -45,7 +45,7 @@ namespace InsulationMasterPro.Visualization
             CreateLayer(db, tr, HATCH_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 1)); // Красный
             CreateLayer(db, tr, OVERLAP_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 4)); // Голубой
             CreateLayer(db, tr, LBOOT_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 6)); // Magenta
-            CreateLayer(db, tr, FACADE_LABELS_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 5)); // Синий
+            CreateLayer(db, tr, FACADE_LABELS_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 2)); // Жёлтый
             CreateLayer(db, tr, OVERLAP_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 4)); // Голубой — зона нахлёста 20 мм
             CreateLayer(db, tr, LBOOT_LAYER, Color.FromColorIndex(ColorMethod.ByAci, 6)); // Magenta — L-boot элементы
         }
@@ -302,7 +302,8 @@ namespace InsulationMasterPro.Visualization
                 if (entity != null &&
                     (entity.Layer == NEW_TILES_LAYER || entity.Layer == REUSED_TILES_LAYER ||
                      entity.Layer == ANNOTATIONS_LAYER || entity.Layer == HATCH_LAYER ||
-                     entity.Layer == OVERLAP_LAYER || entity.Layer == LBOOT_LAYER))
+                     entity.Layer == OVERLAP_LAYER || entity.Layer == LBOOT_LAYER ||
+                     entity.Layer == FACADE_LABELS_LAYER))
                 {
                     objectsToDelete.Add(objId);
                 }
@@ -402,11 +403,11 @@ namespace InsulationMasterPro.Visualization
                 var facadeLabel = new MText
                 {
                     Location = facadeLabelPos,
-                    Contents = $"{facade.Index} фасад",
-                    TextHeight = 300,
+                    Contents = $"\\W1.4;{facade.Index} фасад",
+                    TextHeight = 500,
                     Layer = FACADE_LABELS_LAYER,
                     Attachment = AttachmentPoint.MiddleCenter,
-                    ColorIndex = 5
+                    ColorIndex = 2
                 };
                 modelSpace.AppendEntity(facadeLabel);
                 tr.AddNewlyCreatedDBObject(facadeLabel, true);
@@ -416,7 +417,10 @@ namespace InsulationMasterPro.Visualization
                     
                 var rowNumbers = facadeTiles
                     .GroupBy(t => t.RowIndex)
-                    .Select(g => new { RowIndex = g.Key, CenterY = g.Average(t => t.Position.Y) })
+                    .Select(g => new { 
+                        RowIndex = g.Key, 
+                        CenterY = (g.Min(t => t.Position.Y) + g.Max(t => t.Position.Y + t.Height)) / 2.0 
+                    })
                     .OrderBy(r => r.RowIndex)
                     .ToList();
 
@@ -432,11 +436,11 @@ namespace InsulationMasterPro.Visualization
                     var rowLabel = new MText
                     {
                         Location = rowLabelPos,
-                        Contents = $"{displayNumber}",
-                        TextHeight = 150,
+                        Contents = $"\\W1.4;{displayNumber}",
+                        TextHeight = 250,
                         Layer = FACADE_LABELS_LAYER,
                         Attachment = AttachmentPoint.MiddleCenter,
-                        ColorIndex = 5
+                        ColorIndex = 2
                     };
                     modelSpace.AppendEntity(rowLabel);
                     tr.AddNewlyCreatedDBObject(rowLabel, true);
