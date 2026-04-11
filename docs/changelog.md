@@ -2,6 +2,113 @@
 
 # История изменений
 
+## v3.7.0 (11.04.2026) — Оптимизация утилизации остатков + Variant C
+
+### Обзор
+
+Комплексная оптимизация системы поощрения утилизации остатков. Аудит выявил, что из трёх механизмов поощрения два были фактически мёртвым/дублирующим кодом. Удалены, оставлен единственный эффективный механизм. Результат: **overconsumption 3.77%** на 4 фасадах (было 12-13% на master, 4.77% после промежуточных оптимизаций).
+
+### Variant C: удаление мёртвого и дублирующего кода целевой функции
+
+**Файл:** `OrToolsOptimizer.cs`
+
+Аудит целевой функции солвера выявил **три механизма** поощрения утилизации остатков:
+
+| Механизм | Масштаб (остаток 600×400мм) | Доля в бонусе | Статус |
+|----------|---------------------------|---------------|--------|
+| **Continuous Bonus** (`usedArea × SCALE × RUW`) | −3 240 000 000 | **79.4%** | Оставлен |
+| **USPF** (`UNUSED_STOCK_PENALTY_FACTOR`) | −840 000 000 | **20.6%** | **Удалён** |
+| **SBM** (`STOCK_BONUS_MULTIPLIER`) | −3 920 | **0.0001%** | **Удалён** |
+
+- **`STOCK_BONUS_MULTIPLIER` (SBM=80)** — вносил 0.0001% от общего бонуса. Бинарный бонус за BoolVar использования остатка: `effectiveArea × SBM = ~3 920`. При TILE_WEIGHT=10 000 — меньше стоимости одной плиты. **Мёртвый код.**
+- **`UNUSED_STOCK_PENALTY_FACTOR` (USPF=35)** — штраф за неиспользование остатка через `(1 - BoolVar) × areaScaled × USPF`. Дублировал continuous bonus через тот же BoolVar, но в 200 000 раз слабее. **Дублирующий код.**
+- **Continuous area bonus** (`usedArea × SCALE × RemnantUsageWeight`) — единственный механизм, реально влияющий на решение солвера. **Оставлен без изменений.**
+
+Удалено ~80 строк кода: константы `STOCK_BONUS_MULTIPLIER` и `UNUSED_STOCK_PENALTY_FACTOR`, цикл бинарного бонуса (per-remnant BoolVar × effectiveArea × SBM), цикл штрафа за неиспользование (1-BoolVar × areaScaled × USPF).
+
+> **Почему высокий мультипликатор (RUW=135) необходим:** Row-level objective использует `ceil()` для подсчёта физических плит. Мелкие остатки не снижают количество плит без сильного стимула — нормализация бонуса до 5-50× стоимости плиты (как планировалось изначально) привела к 13.06% overconsumption. Высокий мультипликатор сохранён.
+
+### B1: нормализованный Safety Cap для area bonus
+
+**Файл:** `OrToolsOptimizer.cs`
+
+- **Проблема:** Safety cap `Math.Min(effectiveArea, maxSafeArea=199)` уничтожал разницу между Pass 1 (RUW=115) и Pass 2 (RUW=135). Оба прохода давали одинаковый бонус.
+- **Решение:** Cap заменён на нормализованную площадь. Multi-pass дифференциация разблокирована.
+
+### B2: EnableRowLevelObjective = true по умолчанию
+
+**Файл:** `OrToolsModels.cs`
+
+- `EnableRowLevelObjective` переключён с `false` на `true`. Солвер теперь использует `ceil(Σ NewWidth_ряда / 1200) × TileWeight` — корректно моделирует физические плиты на этапе решения, а не пост-фактум через IntraRowConsolidate.
+
+### B3: гибридный отбор остатков для солвера
+
+**Файл:** `RollingHorizonEngine.cs`
+
+- **Проблема:** При переполнении `MaxStockForSolver` (> 400 остатков) fallback отбирал только по площади, отбрасывая мелкие идеально подходящие остатки.
+- **Решение:** Гибридный отбор: 50% по площади + 50% по match-score (соотношение размеров остатка к высоте ряда).
+
+### A2: предварительная оценка demand + boost ранних фасадов
+
+**Файл:** `tools/DxfHeadlessRunner/Program.cs`
+
+- Pre-scan всех фасадов для оценки net insulation area.
+- Ранние фасады получают повышенный `MaxRemnantUsageWeight` (boost factor 1.3→1.0 линейно по номеру фасада).
+- Результат: более агрессивное потребление остатков на ранних фасадах вместо накопления к последнему.
+
+### C1: EnableRemnantPreAllocation = true по умолчанию
+
+**Файл:** `OrToolsModels.cs`
+
+- Pre-allocation hints передаются как soft signal через `RemnantRowHints` в PatternGenerator при генерации паттернов.
+
+### Stock Flush: отключён (инвариант углового замыкания)
+
+**Файлы:** `tools/DxfHeadlessRunner/Program.cs`, `LayoutEngine.cs`
+
+- **Проблема:** Stock Flush (независимый `RowHeightForecaster` для последнего фасада) создавал нестандартные высоты рядов (230, 370, 390, 410мм), что приводило к 14.1% overconsumption и нарушению углового замыкания.
+- **Решение:** `stockFlushLastFacade = false`. Все фасады используют Row Sync с идентичной сеткой от Фасада 1.
+- Код сохранён за флагом для возможного будущего использования.
+
+### Увеличение весов поощрения
+
+**Файлы:** `OrToolsOptimizer.cs`, `RollingHorizonEngine.cs`
+
+- `RemnantUsageWeight`: pass1 = `Math.Max(80, maxRUW - 20)` = **115**, pass2 = **135** (было 100/120)
+- `STOCK_BONUS_MULTIPLIER`: 50 → 80 (затем удалён в Variant C)
+- `UNUSED_STOCK_PENALTY_FACTOR`: 20 → 35 (затем удалён в Variant C)
+
+### Документация
+
+**Файлы:** `docs/architecture.md`, `docs/spec.md`, `docs/testing.md`
+
+- Добавлен § 32.1 «Инвариант углового замыкания» в spec.md — описание почему Row Sync обязателен.
+- Обновлён architecture.md: Row Sync для всех фасадов, Stock Flush отключён, адаптивные высоты.
+- Исправлены устаревшие значения RemnantUsageWeight (10/20 → 115/135) в architecture.md.
+- Исправлен testing.md: Row Sync для всех фасадов, пороги overconsumption.
+- Описан Variant C: аудит системы вознаграждений, удаление мёртвого кода.
+
+### Headless build на Linux
+
+**Файл:** `InsulationMasterPro.csproj`
+
+- Добавлен `EnableDefaultEmbeddedResourceItems=false` и `<Compile Remove>` для AutoCAD-зависимых файлов — позволяет собирать и тестировать headless runner на Linux.
+- В коммите восстановлен Windows-режим (`net8.0-windows`, `UseWPF=true`, `UseWindowsForms=true`).
+
+### Метрики (4_fasada.dxf)
+
+| Метрика | master (v3.6.0) | **v3.7.0** | Δ |
+|---------|-----------------|------------|---|
+| Overconsumption F1 | — | **5.4%** | — |
+| Overconsumption F2 | — | **2.8%** | — |
+| Overconsumption F3 | — | **3.4%** | — |
+| Overconsumption F4 | — | **3.4%** | — |
+| **Общий overconsumption** | **12-13%** | **3.77%** | **−8-9 п.п.** |
+| TECH REQUIREMENTS | PASS | **PASS** | — |
+| Удалено строк мёртвого кода | — | **~80** | — |
+
+---
+
 ## v3.6.0 (09.04.2026) — Row Sync + Stock Minimization
 
 ### Row Sync: синхронизация сеток рядов между фасадами

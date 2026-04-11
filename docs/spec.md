@@ -850,6 +850,33 @@ Exit code 0 = PASS. Детали: см. [Тестирование](testing.md).
 3. **Stock Flush отключён** (`stockFlushLastFacade = false`): независимый `RowHeightForecaster` для последнего фасада нарушает угловое замыкание, создавая нестандартные высоты рядов.
 4. При конфликте границы ряда с окном (± 130 мм) — fallback на независимый `RowHeightForecaster` с предупреждением `[ROW-SYNC WARN]`.
 
+### 32.2 Целевая функция солвера (Variant C, v3.7.0)
+
+Аудит выявил три механизма поощрения утилизации остатков в `OrToolsOptimizer.cs`. Два из них удалены:
+
+| Механизм | Статус | Причина |
+|-----------|--------|--------|
+| `STOCK_BONUS_MULTIPLIER` (SBM) | **Удалён** | Мёртвый код: вносил 0.0001% от общего бонуса |
+| `UNUSED_STOCK_PENALTY_FACTOR` (USPF) | **Удалён** | Дублирующий код: тот же BoolVar, но в 200 000× слабее |
+| Continuous area bonus | **Оставлен** | 79.4% вклада, единственный эффективный механизм |
+
+Единственный механизм поощрения: `bonus = −(usedRemnantArea × SCALE × RemnantUsageWeight)`, где `SCALE = 100`, `RUW = 115` (pass1) / `135` (pass2).
+
+> **Потолочный эффект ceil():** Row-level objective использует `ceil()` для подсчёта физических плит. Нормализация бонуса до 5-50× стоимости плиты привела к 13.06% overconsumption. Высокий мультипликатор необходим.
+
+### 32.3 Оптимизации многофасадной раскладки (v3.7.0)
+
+| Код | Название | Описание |
+|-----|---------|----------|
+| A2 | Demand boost | Pre-scan всех фасадов; ранние получают boost factor 1.3→1.0 для RUW |
+| B1 | Safety Cap нормализация | Замена `Math.Min(effectiveArea, 199)` на нормализованную площадь |
+| B2 | Row-level objective | `EnableRowLevelObjective = true`; `ceil(Σ NewWidth / 1200) × TILE_WEIGHT` |
+| B3 | Гибридный отбор | 50% по площади + 50% по match-score при > 400 остатках |
+| C1 | Pre-allocation | `EnableRemnantPreAllocation = true`; hints для PatternGenerator |
+| — | Stock Flush | **Отключён** — нарушает инвариант углового замыкания |
+
+**Результат (4_fasada.dxf):** Overconsumption **3.77%** (было 12-13% на master).
+
 ### 32.7 Управление складом при многофасадной раскладке
 
 | Класс | Минимальная сторона | Применение |
@@ -861,10 +888,10 @@ Exit code 0 = PASS. Детали: см. [Тестирование](testing.md).
 ---
 
 *Документ является нормативным и самодостаточным.*  
-*Версия: 15.1 | Дата: 2026-03-29 | Статус: Final for Implementation*
+*Версия: 15.2 | Дата: 2026-04-11 | Статус: Final for Implementation*
 
 ## See Also
 
 - [Архитектура и алгоритм](architecture.md) — Pipeline, алгоритм, параметры плит
-- [История изменений](changelog.md) — версии от v2.1 до v3.5.0
+- [История изменений](changelog.md) — версии от v2.1 до v3.7.0
 - [Тестирование](testing.md) — headless runner, acceptance criteria

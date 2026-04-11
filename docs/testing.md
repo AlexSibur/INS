@@ -67,11 +67,11 @@ dotnet build tools/DxfHeadlessRunner/DxfHeadlessRunner.csproj -c Release
 [HEADLESS] Rows: 17, Segments: 41
 [HEADLESS]   Высоты рядов: 400мм×1, 600мм×16
 [HEADLESS] Starting optimization for facade 1...
-[HEADLESS]   Движение склада: вход=0  -0исп  +105созд  =105итого  (29,613 м²)
+[HEADLESS]   Движение склада: вход=0  -0исп  +101созд  =101итого  (29,xxx м²)
 [HEADLESS] Facade 1 Results:
-[HEADLESS]   SolverStatus: Optimal, SolveTimeMs: 7536
-[HEADLESS]   NewTiles: 154, Reused: 71
-[HEADLESS]   Overconsumption: 2,1% (limit-exceeded=False)
+[HEADLESS]   SolverStatus: Optimal, SolveTimeMs: ~10000
+[HEADLESS]   NewTiles: ~159, Reused: ~65
+[HEADLESS]   Overconsumption: 5,4% (limit-exceeded=False)
 [HEADLESS]   OPTIMIZATION: PASS
 [HEADLESS]   TECH REQUIREMENTS: PASS
 
@@ -80,27 +80,29 @@ dotnet build tools/DxfHeadlessRunner/DxfHeadlessRunner.csproj -c Release
 ╔═══════╦════════════╦════════════╦════════════╦══════════╦══════════╦══════════╦═══════════════╗
 ║ Фасад ║  Перерасх  ║  Куплено   ║  Нетто м²  ║ Скл.вход ║  -Исп    ║  +Созд   ║  Тех.ошибки   ║
 ╠═══════╬════════════╬════════════╬════════════╬══════════╬══════════╬══════════╬═══════════════╣
-║ 1     ║ 2,1%       ║ 110,88 м²  ║ 108,58 м²  ║ 0        ║ -0       ║ +105     ║ PASS          ║
-║ 2     ║ 14,1%!     ║ 123,84 м²  ║ 108,58 м²  ║ 105      ║ -27      ║ +135     ║ PASS          ║
+║ 1     ║ 5,4%       ║ 114,48 м²  ║ 108,58 м²  ║ 0        ║ -0       ║ +101     ║ PASS          ║
+║ 2     ║ 2,8%       ║ 111,60 м²  ║ 108,58 м²  ║ 101      ║ -37      ║ +120     ║ PASS          ║
+║ 3     ║ 3,4%       ║ 112,32 м²  ║ 108,58 м²  ║ 184      ║ -41      ║ +119     ║ PASS          ║
+║ 4     ║ 3,4%       ║ 112,32 м²  ║ 108,58 м²  ║ 262      ║ -47      ║ +119     ║ PASS          ║
 ╚═══════╩════════════╩════════════╩════════════╩══════════╩══════════╩══════════╩═══════════════╝
 
-  ОБЩИЙ ПЕРЕРАСХОД (4 фасада): 9,41% [ПРЕВЫШЕН лимит 7%]
-  На складе после всех фасадов: 432 остатков, 122,034 м²
+  ОБЩИЙ ПЕРЕРАСХОД (4 фасада): 3,77%
+  На складе после всех фасадов: 334 остатков, ~95 м²
 ```
 
 При успешном Row Sync начало каждого фасада выглядит так:
 
 ```
-[CONFIG] Row Sync: ON (Фасады 2-3), Stock Flush Last Facade: ON
-[ROW-SYNC] Фасад 1: сетка рядов рассчитывается независимо (B2 активен)
+[CONFIG] Row Sync: ON (Все фасады 2-N), Stock Flush Last Facade: OFF
+[ROW-SYNC] Фасад 1: сетка рядов рассчитывается независимо (B2 активен, учитывает окна ВСЕХ фасадов)
 [ROW-SYNC] Захвачена сетка: [600, 600, 600, 600, 600, 400] мм (снизу вверх)
 
 [ROW-SYNC] Фасад 2: применяем сетку рядов от Фасада 1 (RowHeightForecaster пропущен)
   -- если окна конфликтуют с сеткой:
 [ROW-SYNC WARN] Фасад Facade_2_...: граница ряда 1800 мм конфликтует с окном [1720-2800]. Fallback на RowHeightForecaster.
-
-[STOCK-FLUSH] Последний фасад: Row Sync отключён, B2 активен для максимальной утилизации остатков
 ```
+
+> **Примечание (v3.7.0):** Stock Flush отключён (`stockFlushLastFacade = false`). Все фасады, включая последний, используют Row Sync для соблюдения инварианта углового замыкания. Независимые высоты для последнего фасада нарушают стыковку на углах здания.
 
 После каждого фасада — диагностика склада:
 
@@ -122,8 +124,8 @@ dotnet build tools/DxfHeadlessRunner/DxfHeadlessRunner.csproj -c Release
 |---------|--------|-------|
 | SolverStatus | Optimal / Feasible | Infeasible / Timeout |
 | Reused | > 0 | 0 (остатки не переиспользуются) |
-| Overconsumption (1 фасад) | ≤ 5% (идеал ~2%) | > 7% |
-| Overconsumption (4 фасада) | ≤ 10% | > 12% |
+| Overconsumption (1 фасад) | ≤ 7% (идеал ~2-5%) | > 7% |
+| Overconsumption (4 фасада) | ≤ 5% (идеал ~3.8%) | > 7% |
 | TECH REQUIREMENTS | PASS | FAIL |
 | -Исп (движение склада) | растёт от фасада к фасаду | стоит на 0 |
 
@@ -131,8 +133,8 @@ dotnet build tools/DxfHeadlessRunner/DxfHeadlessRunner.csproj -c Release
 
 | Файл | Содержимое | Ожидаемый результат |
 |------|-----------|---------------------|
-| `tests/f_test.dxf` | 1 фасад, 15770×10001 мм, 12 окон | Overconsumption ≤ 5%, Exit 0 |
-| `tests/4_fasada.dxf` | 4 фасада, по 12 окон каждый | Общий перерасход ≤ 12%, Exit 0 |
+| `tests/f_test.dxf` | 1 фасад, 15770×10001 мм, 12 окон | Overconsumption ≤ 7%, Exit 0 |
+| `tests/4_fasada.dxf` | 4 фасада, по 12 окон каждый | Общий перерасход ≤ 5%, Exit 0 |
 
 ---
 
@@ -153,8 +155,7 @@ dotnet build tools/DxfHeadlessRunner/DxfHeadlessRunner.csproj -c Release
 |-----|----------|-------------|
 | `[ROW-SYNC]` | Program.cs | Захват/применение сетки рядов от Фасада 1 |
 | `[ROW-SYNC WARN]` | Preprocessor.cs | Граница ряда конфликтует с окном, fallback на RowHeightForecaster |
-| `[CONFIG]` | Program.cs | Конфигурация Row Sync + Stock Flush перед циклом |
-| `[STOCK-FLUSH]` | Program.cs | Последний фасад использует B2 для утилизации остатков |
+| `[CONFIG]` | Program.cs | Конфигурация Row Sync перед циклом (Stock Flush: OFF с v3.7.0) |
 | `[STOCK-DIAG]` | Program.cs | Состав склада по классам A/B/Dead после каждого фасада |
 | `[STOCK-FILTER]` | RollingHorizonEngine.cs | Геометрический фильтр: сколько остатков передано PatternGenerator |
 | `[STOCK-FILTER WARN]` | RollingHorizonEngine.cs | Hard cap 400 сработал — сортировка по площади как fallback |
